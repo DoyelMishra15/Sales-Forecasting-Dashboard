@@ -239,7 +239,11 @@ html, body, [class*="css"] {
 # ─── MATPLOTLIB STYLE ──────────────────────────────────────────────────────────
 def apply_dark_style(fig, ax_list=None):
     fig.patch.set_facecolor('#0f0f1a')
-    axes = ax_list if ax_list else fig.get_axes()
+    axes = ax_list if ax_list is not None else fig.get_axes()
+    if hasattr(axes, 'flatten'):  # handle numpy 2D arrays from subplots
+        axes = axes.flatten().tolist()
+    elif not isinstance(axes, (list, tuple)):
+        axes = [axes]
     for ax in axes:
         ax.set_facecolor('#13131f')
         ax.tick_params(colors='#6b7280', labelsize=9)
@@ -389,6 +393,20 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── TRAIN PROPHET (shared across all tabs) ─────────────────────────────────
+    with st.spinner("Training Prophet model..."):
+        df_prophet = df[['ds', 'y']].copy()
+        if growth_mode == 'logistic':
+            df_prophet['cap'] = df_prophet['y'].max() * 1.5
+            df_prophet['floor'] = 0
+        model = Prophet(growth=growth_mode, daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
+        model.fit(df_prophet)
+        future = model.make_future_dataframe(periods=period)
+        if growth_mode == 'logistic':
+            future['cap'] = df_prophet['cap'].max()
+            future['floor'] = 0
+        forecast = model.predict(future)
+
     # ── TABS ───────────────────────────────────────────────────────────────────
     tab1, tab2, tab3, tab4 = st.tabs([
         "🔮 FORECAST",
@@ -400,20 +418,6 @@ else:
     # ── TAB 1: PROPHET FORECAST ─────────────────────────────────────────────
     with tab1:
         st.markdown('<div class="section-header">Prophet Forecast <span class="section-tag">ML</span></div>', unsafe_allow_html=True)
-
-        with st.spinner("Training Prophet model..."):
-            df_prophet = df[['ds', 'y']].copy()
-            if growth_mode == 'logistic':
-                df_prophet['cap'] = df_prophet['y'].max() * 1.5
-                df_prophet['floor'] = 0
-            model = Prophet(growth=growth_mode, daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
-            model.fit(df_prophet)
-
-            future = model.make_future_dataframe(periods=period)
-            if growth_mode == 'logistic':
-                future['cap'] = df_prophet['cap'].max()
-                future['floor'] = 0
-            forecast = model.predict(future)
 
         # Custom forecast plot
         fig, ax = plt.subplots(figsize=(12, 5))
